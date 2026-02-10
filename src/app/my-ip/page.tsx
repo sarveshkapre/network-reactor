@@ -20,12 +20,13 @@ export default function MyIpPage() {
   const [data, setData] = useState<WhoAmIResponse | null>(null);
   const [err, setErr] = useState<string>("");
   const [loading, setLoading] = useState(false);
+  const [privacyMode, setPrivacyMode] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     setErr("");
     try {
-      const res = await fetch("/api/whoami", { cache: "no-store" });
+      const res = await fetch(`/api/whoami${privacyMode ? "?privacy=1" : ""}`, { cache: "no-store" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = (await res.json()) as WhoAmIResponse;
       setData(json);
@@ -35,7 +36,7 @@ export default function MyIpPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [privacyMode]);
 
   useEffect(() => {
     void load();
@@ -44,6 +45,7 @@ export default function MyIpPage() {
   const serverObserved = useMemo(() => (data ? (data["serverObserved"] as unknown) : null), [data]);
   const asnSummary = useMemo(() => (data ? (data["asnSummary"] as unknown) : null), [data]);
   const reverseDns = useMemo(() => (data ? (data["reverseDns"] as unknown) : null), [data]);
+  const ripeStat = useMemo(() => (data ? (data["ripeStat"] as unknown) : null), [data]);
 
   return (
     <div className="grid gap-6">
@@ -60,6 +62,14 @@ export default function MyIpPage() {
             disabled={loading}
           >
             {loading ? "Refreshing…" : "Refresh"}
+          </button>
+          <button
+            className="rounded-full border border-white/15 bg-black/10 px-4 py-2 text-sm font-medium text-white/75 hover:bg-white/10 disabled:opacity-50"
+            onClick={() => setPrivacyMode((v) => !v)}
+            disabled={loading}
+            title="When enabled, the server avoids outbound enrichment calls and reverse DNS."
+          >
+            Privacy mode: <span className="font-mono text-xs">{privacyMode ? "ON" : "OFF"}</span>
           </button>
           <button
             className="rounded-full border border-white/15 bg-black/10 px-4 py-2 text-sm font-medium text-white/75 hover:bg-white/10 disabled:opacity-50"
@@ -86,11 +96,11 @@ export default function MyIpPage() {
       </section>
 
       <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <Panel title="Reverse DNS (trusted)">
+        <Panel title="Reverse DNS (untrusted)">
           <CodeBlock value={reverseDns} />
         </Panel>
         <Panel title="Raw enrichment (untrusted)">
-          <CodeBlock value={data ? (data["bgpview"] as unknown) : null} />
+          <CodeBlock value={ripeStat} />
         </Panel>
       </section>
     </div>
@@ -113,4 +123,3 @@ function CodeBlock({ value }: { value: unknown }) {
     </pre>
   );
 }
-
