@@ -34,6 +34,18 @@ type PageLoadResponse = {
   desktop: PsiSummary | { error: string; fetchedAt: string } | null;
 };
 
+function prettyJson(v: unknown) {
+  try {
+    return JSON.stringify(v, null, 2);
+  } catch {
+    return String(v);
+  }
+}
+
+async function copyText(text: string) {
+  await navigator.clipboard.writeText(text);
+}
+
 function pct(n: number | null) {
   if (n == null) return "-";
   return `${Math.round(n * 100)}%`;
@@ -69,6 +81,14 @@ export default function PageLoadLab() {
     () => (data?.desktop && "perfScore" in data.desktop ? (data.desktop as PsiSummary) : null),
     [data],
   );
+  const mobileErr = useMemo(
+    () => (data?.mobile && "error" in data.mobile ? (data.mobile as { error: string; fetchedAt: string }) : null),
+    [data],
+  );
+  const desktopErr = useMemo(
+    () => (data?.desktop && "error" in data.desktop ? (data.desktop as { error: string; fetchedAt: string }) : null),
+    [data],
+  );
 
   return (
     <div className="grid gap-6">
@@ -78,6 +98,15 @@ export default function PageLoadLab() {
           V1 uses PageSpeed Insights to get credible Core Web Vitals and a ranked list of “why slow?”
           opportunities. Future v2 adds a real-browser waterfall and CPU timeline.
         </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            className="rounded-full border border-white/15 bg-black/10 px-4 py-2 text-sm font-medium text-white/75 hover:bg-white/10 disabled:opacity-50"
+            onClick={() => void copyText(prettyJson(data))}
+            disabled={!data}
+          >
+            Copy JSON
+          </button>
+        </div>
       </header>
 
       <section className="rounded-2xl border border-white/10 bg-white/5 p-5 ring-1 ring-white/10">
@@ -114,11 +143,22 @@ export default function PageLoadLab() {
         </section>
       ) : null}
 
-      {mobile || desktop ? (
+      {mobile || desktop || mobileErr || desktopErr ? (
         <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {mobile ? <SummaryPanel label="Mobile" summary={mobile} /> : null}
           {desktop ? <SummaryPanel label="Desktop" summary={desktop} /> : null}
+          {mobileErr ? <ErrorPanel label="Mobile" err={mobileErr} /> : null}
+          {desktopErr ? <ErrorPanel label="Desktop" err={desktopErr} /> : null}
         </section>
+      ) : null}
+
+      {data ? (
+        <details className="rounded-2xl border border-white/10 bg-white/5 p-5 ring-1 ring-white/10">
+          <summary className="cursor-pointer text-sm font-semibold text-white/85">Raw response</summary>
+          <pre className="mt-3 max-h-[520px] overflow-auto rounded-xl bg-black/30 p-4 text-xs leading-5 text-white/80 ring-1 ring-white/10">
+            {prettyJson(data)}
+          </pre>
+        </details>
       ) : null}
     </div>
   );
@@ -133,6 +173,7 @@ function SummaryPanel({ label, summary }: { label: string; summary: PsiSummary }
           perf {pct(summary.perfScore)}
         </div>
       </div>
+      <div className="mt-2 text-xs text-white/55">fetchedAt {summary.fetchedAt}</div>
 
       <div className="mt-4 grid gap-3">
         <div className="text-xs font-semibold text-white/70">Key metrics</div>
@@ -162,6 +203,16 @@ function SummaryPanel({ label, summary }: { label: string; summary: PsiSummary }
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+function ErrorPanel({ label, err }: { label: string; err: { error: string; fetchedAt: string } }) {
+  return (
+    <div className="rounded-2xl border border-red-400/20 bg-red-500/10 p-5 ring-1 ring-red-400/15">
+      <div className="text-sm font-semibold text-red-200">{label} error</div>
+      <div className="mt-2 text-xs text-red-100/80">fetchedAt {err.fetchedAt}</div>
+      <div className="mt-3 text-sm text-red-100/90">{err.error}</div>
     </div>
   );
 }
