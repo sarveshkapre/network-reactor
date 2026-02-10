@@ -1,30 +1,16 @@
 import { NextRequest } from "next/server";
 import dns from "node:dns/promises";
 import { ipVersion, normalizeIp } from "@/lib/ip";
+import { getPath } from "@/lib/json";
 import { safeJsonFetch } from "@/lib/safeFetch";
 
 export const runtime = "nodejs";
 
 type RipeStatGeneric = Record<string, unknown>;
 
-function asRecord(v: unknown): Record<string, unknown> | null {
-  if (!v || typeof v !== "object") return null;
-  return v as Record<string, unknown>;
-}
-
-function getPath(v: unknown, path: Array<string | number>): unknown {
-  let cur: unknown = v;
-  for (const p of path) {
-    if (typeof p === "number") {
-      if (!Array.isArray(cur)) return undefined;
-      cur = cur[p];
-      continue;
-    }
-    const r = asRecord(cur);
-    if (!r) return undefined;
-    cur = r[p];
-  }
-  return cur;
+function parseBoolish(v: string): boolean {
+  const s = v.trim().toLowerCase();
+  return s === "1" || s === "true" || s === "yes" || s === "on";
 }
 
 async function reverseDns(ip: string): Promise<string[] | null> {
@@ -43,8 +29,7 @@ async function reverseDns(ip: string): Promise<string[] | null> {
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const privacyRaw = (searchParams.get("privacy") ?? "").trim().toLowerCase();
-  const privacyMode = privacyRaw === "1" || privacyRaw === "true" || privacyRaw === "yes" || privacyRaw === "on";
+  const privacyMode = parseBoolish(searchParams.get("privacy") ?? "");
 
   const headers = req.headers;
   const xff = headers.get("x-forwarded-for");

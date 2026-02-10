@@ -1,16 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { prettyJson } from "@/lib/json";
 
 type WhoAmIResponse = Record<string, unknown>;
-
-function prettyJson(v: unknown) {
-  try {
-    return JSON.stringify(v, null, 2);
-  } catch {
-    return String(v);
-  }
-}
 
 async function copyText(text: string) {
   await navigator.clipboard.writeText(text);

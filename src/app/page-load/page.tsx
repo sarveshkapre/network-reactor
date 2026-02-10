@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { prettyJson } from "@/lib/json";
 
 type PsiMetric = {
   id: string;
@@ -33,14 +34,6 @@ type PageLoadResponse = {
   mobile: PsiSummary | { error: string; fetchedAt: string } | null;
   desktop: PsiSummary | { error: string; fetchedAt: string } | null;
 };
-
-function prettyJson(v: unknown) {
-  try {
-    return JSON.stringify(v, null, 2);
-  } catch {
-    return String(v);
-  }
-}
 
 async function copyText(text: string) {
   await navigator.clipboard.writeText(text);

@@ -1,16 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { asRecord, getPath, prettyJson } from "@/lib/json";
 
 type LookupResponse = Record<string, unknown>;
-
-function prettyJson(v: unknown) {
-  try {
-    return JSON.stringify(v, null, 2);
-  } catch {
-    return String(v);
-  }
-}
 
 async function copyText(text: string) {
   await navigator.clipboard.writeText(text);
@@ -41,7 +34,7 @@ export default function BgpPage() {
     }
   };
 
-  const summary = useMemo(() => summarizeBgpView(data), [data]);
+  const summary = useMemo(() => summarizeLookup(data), [data]);
 
   return (
     <div className="grid gap-6">
@@ -157,7 +150,7 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
   );
 }
 
-function summarizeBgpView(data: LookupResponse | null) {
+function summarizeLookup(data: LookupResponse | null) {
   if (!data) return null;
   const kind = String(data["kind"] ?? "");
   const fetchedAt = String(data["fetchedAt"] ?? "");
@@ -171,9 +164,9 @@ function summarizeBgpView(data: LookupResponse | null) {
   ];
 
   if (kind === "ip") {
-    items.push({ k: "ip", v: String(get(summary, ["ip"]) ?? "-") });
-    items.push({ k: "prefix", v: String(get(summary, ["prefix"]) ?? "-") });
-    const asns = get(summary, ["asns"]);
+    items.push({ k: "ip", v: String(getPath(summary, ["ip"]) ?? "-") });
+    items.push({ k: "prefix", v: String(getPath(summary, ["prefix"]) ?? "-") });
+    const asns = getPath(summary, ["asns"]);
     const asnList = Array.isArray(asns)
       ? asns
           .filter((x): x is string | number => typeof x === "string" || typeof x === "number")
@@ -181,54 +174,37 @@ function summarizeBgpView(data: LookupResponse | null) {
           .join(", ")
       : "";
     items.push({ k: "asns", v: asnList || "-" });
-    items.push({ k: "holder", v: String(get(d, ["prefixOverview", "data", "data", "asns", 0, "holder"]) ?? "-") });
+    items.push({
+      k: "holder",
+      v: String(getPath(d, ["prefixOverview", "data", "data", "asns", 0, "holder"]) ?? "-"),
+    });
     const rpki = summarizeRpki(d);
     if (rpki) items.push({ k: "rpki", v: rpki });
   } else if (kind === "prefix") {
-    items.push({ k: "prefix", v: String(get(summary, ["prefix"]) ?? "-") });
-    const origins = get(summary, ["origins"]);
+    items.push({ k: "prefix", v: String(getPath(summary, ["prefix"]) ?? "-") });
+    const origins = getPath(summary, ["origins"]);
     const originList = Array.isArray(origins) ? origins : [];
     const originAsns = originList
-      .map((x) => get(x, ["asn"]))
+      .map((x) => getPath(x, ["asn"]))
       .filter((x): x is string | number => typeof x === "string" || typeof x === "number")
       .join(", ");
     items.push({ k: "origin ASNs", v: originAsns || "-" });
     const rpki = summarizeRpki(d);
     if (rpki) items.push({ k: "rpki", v: rpki });
   } else if (kind === "asn") {
-    items.push({ k: "asn", v: String(get(summary, ["asn"]) ?? "-") });
-    items.push({ k: "holder", v: String(get(d, ["asOverview", "data", "data", "holder"]) ?? "-") });
-    items.push({ k: "announced", v: String(get(d, ["asOverview", "data", "data", "announced"]) ?? "-") });
+    items.push({ k: "asn", v: String(getPath(summary, ["asn"]) ?? "-") });
+    items.push({ k: "holder", v: String(getPath(d, ["asOverview", "data", "data", "holder"]) ?? "-") });
+    items.push({ k: "announced", v: String(getPath(d, ["asOverview", "data", "data", "announced"]) ?? "-") });
   }
 
   return { items };
 }
 
-function asRecord(v: unknown): Record<string, unknown> | null {
-  if (!v || typeof v !== "object") return null;
-  return v as Record<string, unknown>;
-}
-
-function get(v: unknown, path: Array<string | number>): unknown {
-  let cur: unknown = v;
-  for (const p of path) {
-    if (typeof p === "number") {
-      if (!Array.isArray(cur)) return undefined;
-      cur = cur[p];
-      continue;
-    }
-    const r = asRecord(cur);
-    if (!r) return undefined;
-    cur = r[p];
-  }
-  return cur;
-}
-
 function summarizeRpki(d: unknown): string | null {
-  const validations = get(d, ["rpkiValidations"]);
+  const validations = getPath(d, ["rpkiValidations"]);
   const arr = Array.isArray(validations) ? validations : [];
   const statuses = arr
-    .map((x) => get(x, ["data", "status"]))
+    .map((x) => getPath(x, ["data", "status"]))
     .filter((x): x is string => typeof x === "string" && !!x);
   if (!statuses.length) return null;
   const uniq = Array.from(new Set(statuses));
