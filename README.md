@@ -22,9 +22,17 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 ## Local Smoke Checks
 
 - Page Load Lab: run a test against a public URL.
-- My IP: open `/my-ip` and verify the “server observed” block renders.
-- BGP Explorer: search an ASN like `15169` or an IP like `8.8.8.8`.
+- My IP: open `/my-ip` and verify the “server observed” block renders (toggle “Privacy mode” to avoid outbound enrichment).
+- BGP Explorer: search an ASN like `15169` or an IP like `8.8.8.8` (provider: RIPEstat).
 - Speed Test: run a short test; verify download/upload move.
+
+Or run the API smoke script while the dev server is running:
+
+```bash
+npm run dev
+# in another terminal:
+npm run smoke
+```
 
 ## Build
 
@@ -32,6 +40,10 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 npm run lint
 npm run build
 ```
+
+## Optional API keys
+
+Page Load Lab uses PageSpeed Insights v5. You can optionally set `PAGESPEED_API_KEY` to reduce quota issues.
 
 ## Deploy
 
