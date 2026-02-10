@@ -32,6 +32,7 @@
 - 2026-02-10 | `(npm run dev) + BASE_URL=http://localhost:3000 npm run smoke` | “smoke: pass” | pass
 - 2026-02-10 | `npm run lint` | exit 0 (post-refactor bf142f0) | pass
 - 2026-02-10 | `npm run build` | “Compiled successfully” (post-refactor bf142f0) | pass
+- 2026-02-10 | `(npm run dev) + BASE_URL=http://localhost:3000 npm run smoke` | “smoke: pass” (post-refactor 7f4cae3) | pass
 
 ## Historical Summary
 - Keep compact summaries of older entries here when file compaction runs.
