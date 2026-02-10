@@ -1,5 +1,8 @@
 import { NextRequest } from "next/server";
 import { SafeFetchResult, safeJsonFetch } from "@/lib/safeFetch";
+import { normalizeIp } from "@/lib/ip";
+
+export const runtime = "nodejs";
 
 type PsiResponse = Record<string, unknown>;
 
@@ -22,6 +25,32 @@ type LighthouseResult = {
   audits?: Record<string, LhrAudit>;
 };
 
+function isPrivateOrLocalhost(hostname: string): boolean {
+  const h = hostname.toLowerCase();
+  if (h === "localhost" || h.endsWith(".localhost")) return true;
+  if (h.endsWith(".local")) return true;
+
+  const ip = normalizeIp(h);
+  if (!ip) return false;
+  // IPv4 private/reserved ranges.
+  if (ip.includes(".")) {
+    const parts = ip.split(".").map((x) => Number(x));
+    const [a, b] = parts;
+    if (a === 10) return true;
+    if (a === 127) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 172 && b != null && b >= 16 && b <= 31) return true;
+    return false;
+  }
+
+  // IPv6 loopback/link-local/ULA.
+  if (ip === "::1") return true;
+  if (ip.startsWith("fe80:") || ip.startsWith("fe80::")) return true;
+  if (ip.startsWith("fc") || ip.startsWith("fd")) return true; // fc00::/7 (coarse)
+  return false;
+}
+
 function validateUrl(input: string): { ok: true; url: string } | { ok: false; error: string } {
   try {
     const u = new URL(input);
@@ -30,6 +59,13 @@ function validateUrl(input: string): { ok: true; url: string } | { ok: false; er
     }
     if (!u.hostname || u.hostname.length > 253) {
       return { ok: false, error: "Invalid hostname" };
+    }
+    if (isPrivateOrLocalhost(u.hostname)) {
+      return {
+        ok: false,
+        error:
+          "This v1 runs via PageSpeed Insights, which cannot test localhost/private IPs. Use a public URL.",
+      };
     }
     return { ok: true, url: u.toString() };
   } catch {
@@ -87,6 +123,9 @@ async function runPsi(targetUrl: string, strategy: "mobile" | "desktop") {
   api.searchParams.append("category", "performance");
   api.searchParams.append("category", "best-practices");
   api.searchParams.append("category", "seo");
+  if (process.env.PAGESPEED_API_KEY) {
+    api.searchParams.set("key", process.env.PAGESPEED_API_KEY);
+  }
 
   return safeJsonFetch<PsiResponse>(api.toString(), { timeoutMs: 12000 });
 }
@@ -141,5 +180,5 @@ export async function GET(req: NextRequest) {
     trust: "untrusted",
   };
 
-  return Response.json(payload);
+  return Response.json(payload, { headers: { "cache-control": "no-store" } });
 }

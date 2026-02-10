@@ -5,5 +5,5 @@ export async function GET() {
     ok: true,
     serverTime: Date.now(),
     iso: new Date().toISOString(),
-  });
+  }, { headers: { "cache-control": "no-store" } });
 }
