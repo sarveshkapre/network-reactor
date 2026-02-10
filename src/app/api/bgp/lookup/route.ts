@@ -25,7 +25,10 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const raw = (searchParams.get("q") ?? "").trim();
   if (!raw) {
-    return Response.json({ error: "missing query parameter q" }, { status: 400 });
+    return Response.json(
+      { ok: false, error: "missing query parameter q", trust: "trusted" },
+      { status: 400, headers: { "cache-control": "no-store" } },
+    );
   }
 
   const q = raw.replace(/^AS/i, "");
@@ -42,10 +45,12 @@ export async function GET(req: NextRequest) {
   if (kind === "unknown") {
     return Response.json(
       {
+        ok: false,
         error: "unrecognized query",
         hint: "Try an IP (8.8.8.8), prefix (8.8.8.0/24), or ASN (15169).",
+        trust: "trusted",
       },
-      { status: 400 },
+      { status: 400, headers: { "cache-control": "no-store" } },
     );
   }
 
@@ -79,7 +84,7 @@ export async function GET(req: NextRequest) {
     networkInfo = ni.ok ? ni.value : { error: ni.error, fetchedAt: ni.fetchedAt };
     if (!ni.ok) {
       return Response.json(
-        { kind, query: raw, source: "ripe-stat", fetchedAt, error: ni.error, trust: "untrusted" },
+        { ok: false, kind, query: raw, source: "ripe-stat", fetchedAt, error: ni.error, trust: "untrusted" },
         { status: 502, headers: { "cache-control": "no-store" } },
       );
     }
@@ -113,7 +118,7 @@ export async function GET(req: NextRequest) {
     prefixOverview = po.ok ? po.value : { error: po.error, fetchedAt: po.fetchedAt };
     if (!po.ok) {
       return Response.json(
-        { kind, query: raw, source: "ripe-stat", fetchedAt, error: po.error, trust: "untrusted" },
+        { ok: false, kind, query: raw, source: "ripe-stat", fetchedAt, error: po.error, trust: "untrusted" },
         { status: 502, headers: { "cache-control": "no-store" } },
       );
     }
@@ -148,7 +153,7 @@ export async function GET(req: NextRequest) {
     asOverview = ao.ok ? ao.value : { error: ao.error, fetchedAt: ao.fetchedAt };
     if (!ao.ok) {
       return Response.json(
-        { kind, query: raw, source: "ripe-stat", fetchedAt, error: ao.error, trust: "untrusted" },
+        { ok: false, kind, query: raw, source: "ripe-stat", fetchedAt, error: ao.error, trust: "untrusted" },
         { status: 502, headers: { "cache-control": "no-store" } },
       );
     }
@@ -156,6 +161,7 @@ export async function GET(req: NextRequest) {
   }
 
   return Response.json({
+    ok: true,
     kind,
     query: raw,
     source: "ripe-stat",

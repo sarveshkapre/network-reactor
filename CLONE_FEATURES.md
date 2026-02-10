@@ -8,6 +8,14 @@
 
 ## Candidate Features To Do
 
+### Selected (cycle 3 session)
+- [ ] **CI: add GitHub Actions workflow for `npm run lint` + `npm run build`** (impact: high, effort: low, fit: high, diff: medium, risk: low, confidence: high)
+- [ ] **API abuse protection: basic per-IP rate limiting for `/api/speed/*` + `/api/pageload`** (impact: high, effort: medium, fit: high, diff: medium, risk: medium, confidence: medium)
+- [ ] **API correctness: ensure `cache-control: no-store` on all API error responses + consistent JSON error shape** (impact: medium, effort: low, fit: high, diff: low, risk: low, confidence: high)
+- [ ] **Security headers: add baseline headers for all routes (CSP-lite, frame-ancestors, referrer-policy, permissions-policy)** (impact: medium, effort: low, fit: high, diff: low, risk: medium, confidence: medium)
+- [ ] **Speed Test UX: add “Copy JSON” export + tunable advanced settings with safe clamps (duration/concurrency/size)** (impact: medium, effort: low, fit: high, diff: medium, risk: low, confidence: high)
+- [ ] **Verification: extend `scripts/smoke.mjs` to cover rate-limit and error paths** (impact: medium, effort: low, fit: high, diff: low, risk: low, confidence: high)
+
 ### Not Selected (keep on backlog)
 - [ ] **Speed Test: multi-region servers + nearest selection** (impact: high, effort: high, fit: high, diff: high, risk: high, confidence: low)
 - [ ] **BGP Explorer v2: time travel + RPKI/IRR posture + anomaly hints** (impact: high, effort: very high, fit: high, diff: high, risk: high, confidence: low)
@@ -26,13 +34,17 @@
 ## Insights
 - Avoid auto-importing checklist items from `node_modules/` or other third-party code: it creates noisy/irrelevant backlog entries.
 - Market scan notes (untrusted external sources, links):
-  - Speed tests: “latency under load” and packet loss are baseline expectations (Cloudflare speed test, Fast.com) and strongly increase diagnostic value.
-  - Page load tooling parity typically includes a waterfall/filmstrip/repeat-view (WebPageTest) even if the first cut uses PSI.
+  - Speed tests: “loaded latency” (bufferbloat), jitter, and packet loss are baseline expectations beyond pure throughput.
+  - Page load tooling parity typically includes a waterfall + repeat view + filmstrip (even if v1 starts with PSI).
   - BGP/IP enrichment needs a dependable public API; RIPEstat’s Data API provides core primitives and is globally useful.
   - Links:
     - https://speed.cloudflare.com/
+    - https://developers.cloudflare.com/speed/aim/
+    - https://blog.cloudflare.com/how-does-cloudflares-speed-test-really-work/
     - https://fast.com/
+    - https://about.netflix.com/news/fast-com-now-measures-latency-and-upload-speed
     - https://www.webpagetest.org/
+    - https://docs.webpagetest.org/getting-started/
     - https://stat.ripe.net/docs/data_api
 
 ## Notes

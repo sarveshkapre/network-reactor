@@ -1,6 +1,8 @@
 import { NextRequest } from "next/server";
 import { SafeFetchResult, safeJsonFetch } from "@/lib/safeFetch";
 import { normalizeIp } from "@/lib/ip";
+import { getClientIp } from "@/lib/requestIp";
+import { checkRateLimit } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
 
@@ -131,15 +133,22 @@ async function runPsi(targetUrl: string, strategy: "mobile" | "desktop") {
 }
 
 export async function GET(req: NextRequest) {
+  const ip = getClientIp(req) ?? "unknown";
+  const rl = checkRateLimit({ key: `pageload:${ip}`, max: 12, windowMs: 60_000 });
+  const baseHeaders = { "cache-control": "no-store", ...rl.headers };
+  if (!rl.ok) {
+    return Response.json({ ok: false, error: "rate limited", trust: "trusted" }, { status: 429, headers: baseHeaders });
+  }
+
   const { searchParams } = new URL(req.url);
   const raw = (searchParams.get("url") ?? "").trim();
   if (!raw) {
-    return Response.json({ error: "missing query parameter url" }, { status: 400 });
+    return Response.json({ ok: false, error: "missing query parameter url", trust: "trusted" }, { status: 400, headers: baseHeaders });
   }
 
   const v = validateUrl(raw);
   if (!v.ok) {
-    return Response.json({ error: v.error }, { status: 400 });
+    return Response.json({ ok: false, error: v.error, trust: "trusted" }, { status: 400, headers: baseHeaders });
   }
 
   const [mobile, desktop] = await Promise.all([runPsi(v.url, "mobile"), runPsi(v.url, "desktop")]);
@@ -169,6 +178,7 @@ export async function GET(req: NextRequest) {
   }
 
   const payload = {
+    ok: true,
     url: v.url,
     source: "pagespeed-insights",
     notes: [
@@ -180,5 +190,5 @@ export async function GET(req: NextRequest) {
     trust: "untrusted",
   };
 
-  return Response.json(payload, { headers: { "cache-control": "no-store" } });
+  return Response.json(payload, { headers: baseHeaders });
 }

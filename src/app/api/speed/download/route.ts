@@ -1,4 +1,6 @@
 import { NextRequest } from "next/server";
+import { getClientIp } from "@/lib/requestIp";
+import { checkRateLimit } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
 
@@ -22,6 +24,13 @@ function makeTemplate(size: number) {
 const TEMPLATE = makeTemplate(64 * 1024);
 
 export async function GET(req: NextRequest) {
+  const ip = getClientIp(req) ?? "unknown";
+  const rl = checkRateLimit({ key: `speed:download:${ip}`, max: 90, windowMs: 60_000 });
+  const rlHeaders = { ...rl.headers };
+  if (!rl.ok) {
+    return Response.json({ ok: false, error: "rate limited", trust: "trusted" }, { status: 429, headers: { "cache-control": "no-store", ...rlHeaders } });
+  }
+
   const { searchParams } = new URL(req.url);
   const sizeMbRaw = Number(searchParams.get("mb") ?? "16");
   const sizeMb = clamp(Number.isFinite(sizeMbRaw) ? sizeMbRaw : 16, 1, 128);
@@ -54,6 +63,7 @@ export async function GET(req: NextRequest) {
       "cache-control": "no-store",
       "x-content-type-options": "nosniff",
       "x-bytes": String(totalBytes),
+      ...rlHeaders,
     },
   });
 }
