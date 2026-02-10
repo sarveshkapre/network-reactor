@@ -15,50 +15,83 @@ function fmt(n: number) {
   return n.toFixed(1);
 }
 
+function median(a: number[]) {
+  if (!a.length) return null;
+  const s = [...a].sort((x, y) => x - y);
+  return s[Math.floor(s.length / 2)] ?? null;
+}
+
+function jitterMedianAbsDelta(a: number[]) {
+  if (a.length < 2) return null;
+  const diffs = a.slice(1).map((v, i) => Math.abs(v - a[i]!));
+  return median(diffs);
+}
+
 export default function SpeedTestPage() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string>("");
   const [latencies, setLatencies] = useState<number[]>([]);
+  const [idleLoss, setIdleLoss] = useState<number>(0);
   const [downloadMbps, setDownloadMbps] = useState<number | null>(null);
   const [uploadMbps, setUploadMbps] = useState<number | null>(null);
   const [downloadSeries, setDownloadSeries] = useState<number[]>([]);
   const [uploadSeries, setUploadSeries] = useState<number[]>([]);
+  const [downloadLoadedLatencies, setDownloadLoadedLatencies] = useState<number[]>([]);
+  const [downloadLoadedLoss, setDownloadLoadedLoss] = useState<number>(0);
+  const [uploadLoadedLatencies, setUploadLoadedLatencies] = useState<number[]>([]);
+  const [uploadLoadedLoss, setUploadLoadedLoss] = useState<number>(0);
 
-  const jitter = useMemo(() => {
-    if (latencies.length < 2) return null;
-    const diffs = latencies.slice(1).map((v, i) => Math.abs(v - latencies[i]!));
-    diffs.sort((a, b) => a - b);
-    return diffs[Math.floor(diffs.length / 2)] ?? null;
-  }, [latencies]);
+  const jitter = useMemo(() => jitterMedianAbsDelta(latencies), [latencies]);
 
-  const medianLatency = useMemo(() => {
-    if (!latencies.length) return null;
-    const a = [...latencies].sort((x, y) => x - y);
-    return a[Math.floor(a.length / 2)] ?? null;
-  }, [latencies]);
+  const medianLatency = useMemo(() => median(latencies), [latencies]);
+  const loadedDownloadMedian = useMemo(() => median(downloadLoadedLatencies), [downloadLoadedLatencies]);
+  const loadedUploadMedian = useMemo(() => median(uploadLoadedLatencies), [uploadLoadedLatencies]);
+
+  const bufferbloatMs = useMemo(() => {
+    if (medianLatency == null) return null;
+    const worstLoaded = Math.max(loadedDownloadMedian ?? 0, loadedUploadMedian ?? 0);
+    if (!worstLoaded) return null;
+    return Math.max(0, worstLoaded - medianLatency);
+  }, [medianLatency, loadedDownloadMedian, loadedUploadMedian]);
+
+  function lossPct(lost: number, okCount: number) {
+    const total = lost + okCount;
+    if (!total) return null;
+    return (lost / total) * 100;
+  }
 
   const run = async () => {
     setError("");
     setLatencies([]);
+    setIdleLoss(0);
     setDownloadMbps(null);
     setUploadMbps(null);
     setDownloadSeries([]);
     setUploadSeries([]);
+    setDownloadLoadedLatencies([]);
+    setDownloadLoadedLoss(0);
+    setUploadLoadedLatencies([]);
+    setUploadLoadedLoss(0);
 
     try {
       setPhase("ping");
-      const p = await measurePing({ samples: 10 });
+      const p = await measurePing({ samples: 10, timeoutMs: 1200 });
       setLatencies(p.latenciesMs);
+      setIdleLoss(p.lost);
 
       setPhase("download");
       const d = await measureDownload({ durationMs: 8000, concurrency: 4, mbPerRequest: 16 });
       setDownloadMbps(d.mbps);
       setDownloadSeries(d.seriesMbps);
+      setDownloadLoadedLatencies(d.loadedLatenciesMs);
+      setDownloadLoadedLoss(d.loadedLost);
 
       setPhase("upload");
       const u = await measureUpload({ durationMs: 8000, concurrency: 3, mbPerPost: 2 });
       setUploadMbps(u.mbps);
       setUploadSeries(u.seriesMbps);
+      setUploadLoadedLatencies(u.loadedLatenciesMs);
+      setUploadLoadedLoss(u.loadedLost);
 
       setPhase("done");
     } catch (e) {
@@ -100,10 +133,27 @@ export default function SpeedTestPage() {
         ) : null}
       </section>
 
-      <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <Metric label="Latency (median)" value={medianLatency != null ? `${Math.round(medianLatency)} ms` : "-"} />
-        <Metric label="Jitter (median |Δ|)" value={jitter != null ? `${Math.round(jitter)} ms` : "-"} />
-        <Metric label="Download / Upload" value={`${downloadMbps != null ? fmt(downloadMbps) : "-"} / ${uploadMbps != null ? fmt(uploadMbps) : "-"} Mbps`} />
+      <section className="grid grid-cols-1 gap-4 md:grid-cols-4">
+        <Metric
+          label="Idle latency / jitter"
+          value={`${medianLatency != null ? `${Math.round(medianLatency)} ms` : "-"} / ${jitter != null ? `${Math.round(jitter)} ms` : "-"}`}
+          sub={`loss ${lossPct(idleLoss, latencies.length) != null ? `${lossPct(idleLoss, latencies.length)!.toFixed(0)}%` : "-"}`}
+        />
+        <Metric
+          label="Latency under download"
+          value={loadedDownloadMedian != null ? `${Math.round(loadedDownloadMedian)} ms` : "-"}
+          sub={`loss ${lossPct(downloadLoadedLoss, downloadLoadedLatencies.length) != null ? `${lossPct(downloadLoadedLoss, downloadLoadedLatencies.length)!.toFixed(0)}%` : "-"}`}
+        />
+        <Metric
+          label="Latency under upload"
+          value={loadedUploadMedian != null ? `${Math.round(loadedUploadMedian)} ms` : "-"}
+          sub={`loss ${lossPct(uploadLoadedLoss, uploadLoadedLatencies.length) != null ? `${lossPct(uploadLoadedLoss, uploadLoadedLatencies.length)!.toFixed(0)}%` : "-"}`}
+        />
+        <Metric
+          label="Download / Upload"
+          value={`${downloadMbps != null ? fmt(downloadMbps) : "-"} / ${uploadMbps != null ? fmt(uploadMbps) : "-"} Mbps`}
+          sub={bufferbloatMs != null ? `bufferbloat +${Math.round(bufferbloatMs)}ms` : "bufferbloat -"}
+        />
       </section>
 
       <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -118,11 +168,12 @@ export default function SpeedTestPage() {
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="rounded-2xl border border-white/10 bg-white/5 p-5 ring-1 ring-white/10">
       <div className="text-xs font-semibold text-white/60">{label}</div>
       <div className="mt-2 font-mono text-2xl text-white/90">{value}</div>
+      {sub ? <div className="mt-2 text-xs text-white/55">{sub}</div> : null}
     </div>
   );
 }
@@ -155,18 +206,32 @@ function Sparkline({ series }: { series: number[] }) {
   );
 }
 
-async function measurePing(opts: { samples: number }) {
-  const latenciesMs: number[] = [];
-  for (let i = 0; i < opts.samples; i++) {
+async function pingOnce(timeoutMs: number) {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), timeoutMs);
+  try {
     const t0 = performance.now();
-    const res = await fetch("/api/speed/ping", { cache: "no-store" });
+    const res = await fetch("/api/speed/ping", { cache: "no-store", signal: controller.signal });
     if (!res.ok) throw new Error(`ping HTTP ${res.status}`);
     await res.json();
-    const dt = performance.now() - t0;
-    latenciesMs.push(dt);
+    return { ok: true as const, ms: performance.now() - t0 };
+  } catch {
+    return { ok: false as const, ms: null as number | null };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+async function measurePing(opts: { samples: number; timeoutMs: number }) {
+  const latenciesMs: number[] = [];
+  let lost = 0;
+  for (let i = 0; i < opts.samples; i++) {
+    const r = await pingOnce(opts.timeoutMs);
+    if (r.ok && r.ms != null) latenciesMs.push(r.ms);
+    else lost++;
     await sleep(120);
   }
-  return { latenciesMs };
+  return { latenciesMs, lost };
 }
 
 async function measureDownload(opts: { durationMs: number; concurrency: number; mbPerRequest: number }) {
@@ -185,6 +250,18 @@ async function measureDownload(opts: { durationMs: number; concurrency: number; 
     lastSampleAt = now;
     lastBytes = totalBytes;
   }, 1000);
+
+  const loadedLatenciesMs: number[] = [];
+  let loadedLost = 0;
+
+  const loadedPinger = (async () => {
+    while (performance.now() < endAt) {
+      const r = await pingOnce(1200);
+      if (r.ok && r.ms != null) loadedLatenciesMs.push(r.ms);
+      else loadedLost++;
+      await sleep(220);
+    }
+  })();
 
   const workers = Array.from({ length: opts.concurrency }, async () => {
     while (performance.now() < endAt) {
@@ -213,10 +290,11 @@ async function measureDownload(opts: { durationMs: number; concurrency: number; 
   });
 
   await Promise.all(workers);
+  await loadedPinger;
   clearInterval(sampler);
 
   const elapsedMs = opts.durationMs;
-  return { mbps: mbps(totalBytes, elapsedMs), seriesMbps };
+  return { mbps: mbps(totalBytes, elapsedMs), seriesMbps, loadedLatenciesMs, loadedLost };
 }
 
 async function measureUpload(opts: { durationMs: number; concurrency: number; mbPerPost: number }) {
@@ -238,6 +316,18 @@ async function measureUpload(opts: { durationMs: number; concurrency: number; mb
     lastSampleAt = now;
     lastBytes = totalBytes;
   }, 1000);
+
+  const loadedLatenciesMs: number[] = [];
+  let loadedLost = 0;
+
+  const loadedPinger = (async () => {
+    while (performance.now() < endAt) {
+      const r = await pingOnce(1200);
+      if (r.ok && r.ms != null) loadedLatenciesMs.push(r.ms);
+      else loadedLost++;
+      await sleep(220);
+    }
+  })();
 
   const workers = Array.from({ length: opts.concurrency }, async () => {
     while (performance.now() < endAt) {
@@ -262,10 +352,11 @@ async function measureUpload(opts: { durationMs: number; concurrency: number; mb
   });
 
   await Promise.all(workers);
+  await loadedPinger;
   clearInterval(sampler);
 
   const elapsedMs = opts.durationMs;
-  return { mbps: mbps(totalBytes, elapsedMs), seriesMbps };
+  return { mbps: mbps(totalBytes, elapsedMs), seriesMbps, loadedLatenciesMs, loadedLost };
 }
 
 function sleep(ms: number) {

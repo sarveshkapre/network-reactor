@@ -29,6 +29,5 @@ export async function POST(req: NextRequest) {
     ok: true,
     bytesReceived: total,
     iso: new Date().toISOString(),
-  });
+  }, { headers: { "cache-control": "no-store" } });
 }
-

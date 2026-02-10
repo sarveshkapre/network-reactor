@@ -6,6 +6,21 @@ function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, n));
 }
 
+function makeTemplate(size: number) {
+  const out = new Uint8Array(size);
+  // Fast, deterministic PRNG (xorshift32) to produce incompressible-ish bytes without crypto cost.
+  let x = 0x6d2b79f5;
+  for (let i = 0; i < out.length; i++) {
+    x ^= x << 13;
+    x ^= x >>> 17;
+    x ^= x << 5;
+    out[i] = x & 0xff;
+  }
+  return out;
+}
+
+const TEMPLATE = makeTemplate(64 * 1024);
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const sizeMbRaw = Number(searchParams.get("mb") ?? "16");
@@ -13,8 +28,6 @@ export async function GET(req: NextRequest) {
   const totalBytes = sizeMb * 1024 * 1024;
 
   const chunkSize = 64 * 1024;
-  const encoder = new TextEncoder();
-  const seed = encoder.encode("network-reactor-speedtest-");
 
   let sent = 0;
   const stream = new ReadableStream<Uint8Array>({
@@ -25,11 +38,8 @@ export async function GET(req: NextRequest) {
         return;
       }
       const n = Math.min(chunkSize, remaining);
-      const buf = new Uint8Array(n);
-      // Fill deterministically (avoid compressibility being too extreme).
-      for (let i = 0; i < n; i++) {
-        buf[i] = seed[(sent + i) % seed.length] ?? 0x5a;
-      }
+      // Copy from a deterministic template to reduce compressibility while avoiding per-chunk PRNG cost.
+      const buf = TEMPLATE.slice(0, n);
       sent += n;
       controller.enqueue(buf);
     },
@@ -38,9 +48,12 @@ export async function GET(req: NextRequest) {
   return new Response(stream, {
     headers: {
       "content-type": "application/octet-stream",
+      // Try to prevent platform compression from affecting throughput measurements.
+      "content-encoding": "identity",
+      vary: "accept-encoding",
       "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
       "x-bytes": String(totalBytes),
     },
   });
 }
-
