@@ -22,12 +22,13 @@ export default function BgpPage() {
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const run = async () => {
+  const run = async (override?: string) => {
     setLoading(true);
     setErr("");
     setData(null);
     try {
-      const res = await fetch(`/api/bgp/lookup?q=${encodeURIComponent(q.trim())}`, { cache: "no-store" });
+      const query = (override ?? q).trim();
+      const res = await fetch(`/api/bgp/lookup?q=${encodeURIComponent(query)}`, { cache: "no-store" });
       const json = (await res.json()) as LookupResponse;
       if (!res.ok) {
         throw new Error((json["error"] as string) || `HTTP ${res.status}`);
@@ -48,9 +49,39 @@ export default function BgpPage() {
         <h1 className="text-2xl font-semibold tracking-tight text-white">BGP Explorer</h1>
         <p className="max-w-3xl text-sm leading-6 text-white/65">
           Search an IP, prefix (CIDR), or ASN. Data is best-effort external enrichment and should be treated
-          as approximate.
+          as approximate. Provider: RIPEstat.
         </p>
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            className="rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-white/80 ring-1 ring-white/15 hover:bg-white/15 disabled:opacity-50"
+            onClick={() => {
+              setQ("8.8.8.8");
+              void run("8.8.8.8");
+            }}
+            disabled={loading}
+          >
+            try 8.8.8.8
+          </button>
+          <button
+            className="rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-white/80 ring-1 ring-white/15 hover:bg-white/15 disabled:opacity-50"
+            onClick={() => {
+              setQ("8.8.8.0/24");
+              void run("8.8.8.0/24");
+            }}
+            disabled={loading}
+          >
+            try 8.8.8.0/24
+          </button>
+          <button
+            className="rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-white/80 ring-1 ring-white/15 hover:bg-white/15 disabled:opacity-50"
+            onClick={() => {
+              setQ("15169");
+              void run("15169");
+            }}
+            disabled={loading}
+          >
+            try 15169
+          </button>
           <button
             className="rounded-full border border-white/15 bg-black/10 px-4 py-2 text-sm font-medium text-white/75 hover:bg-white/10 disabled:opacity-50"
             onClick={() => void copyText(prettyJson(data))}
