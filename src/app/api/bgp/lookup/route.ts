@@ -96,12 +96,15 @@ export async function GET(req: NextRequest) {
       const po = await fetchCall(`prefix-overview/data.json?resource=${encodeURIComponent(pfx)}`);
       prefixOverview = po.ok ? po.value : { error: po.error, fetchedAt: po.fetchedAt };
       // RPKI: best-effort for a couple of origin ASNs.
-      for (const origin of asns.slice(0, 3)) {
-        const rv = await fetchCall(
-          `rpki-validation/data.json?resource=${encodeURIComponent(origin)}&prefix=${encodeURIComponent(pfx)}`,
-        );
-        rpkiValidations.push(rv.ok ? rv.value : { error: rv.error, fetchedAt: rv.fetchedAt, origin, prefix: pfx });
-      }
+      const rpki = await Promise.all(
+        asns.slice(0, 3).map(async (origin) => {
+          const rv = await fetchCall(
+            `rpki-validation/data.json?resource=${encodeURIComponent(origin)}&prefix=${encodeURIComponent(pfx)}`,
+          );
+          return rv.ok ? rv.value : { error: rv.error, fetchedAt: rv.fetchedAt, origin, prefix: pfx };
+        }),
+      );
+      rpkiValidations.push(...rpki);
     }
   }
 
@@ -129,14 +132,15 @@ export async function GET(req: NextRequest) {
     }
     summary = { kind: "prefix", prefix, origins };
 
-    for (const origin of origins.slice(0, 3)) {
-      const rv = await fetchCall(
-        `rpki-validation/data.json?resource=${encodeURIComponent(String(origin.asn))}&prefix=${encodeURIComponent(prefix)}`,
-      );
-      rpkiValidations.push(
-        rv.ok ? rv.value : { error: rv.error, fetchedAt: rv.fetchedAt, origin: String(origin.asn), prefix },
-      );
-    }
+    const rpki = await Promise.all(
+      origins.slice(0, 3).map(async (origin) => {
+        const rv = await fetchCall(
+          `rpki-validation/data.json?resource=${encodeURIComponent(String(origin.asn))}&prefix=${encodeURIComponent(prefix)}`,
+        );
+        return rv.ok ? rv.value : { error: rv.error, fetchedAt: rv.fetchedAt, origin: String(origin.asn), prefix };
+      }),
+    );
+    rpkiValidations.push(...rpki);
   }
 
   if (kind === "asn" && asn) {
