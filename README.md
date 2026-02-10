@@ -1,36 +1,43 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Network Reactor
+
+Minimal, modern internet diagnostics suite:
+- Page Load Lab (Core Web Vitals + “why slow?”)
+- My IP (server-observed metadata + enrichment)
+- BGP Explorer (IP/prefix/ASN lookups)
+- Speed Test (download/upload/latency/jitter)
+
+See `plan.md` for the roadmap and design notes.
 
 ## Getting Started
 
-First, run the development server:
+Install deps and run the dev server:
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Local Smoke Checks
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- Page Load Lab: run a test against a public URL.
+- My IP: open `/my-ip` and verify the “server observed” block renders.
+- BGP Explorer: search an ASN like `15169` or an IP like `8.8.8.8`.
+- Speed Test: run a short test; verify download/upload move.
 
-## Learn More
+## Build
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm run lint
+npm run build
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Deploy
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Vercel works well for the UI. Some tools (especially future real-browser page load runs) may require a dedicated runner.
 
-## Deploy on Vercel
+## Notes
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- External enrichment sources are treated as best-effort and are clearly labeled in the UI.
+- Privacy-first defaults: avoid persistent logging of user IPs; show approximations with labels.
