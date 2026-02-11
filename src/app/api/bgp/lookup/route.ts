@@ -1,5 +1,7 @@
 import { NextRequest } from "next/server";
 import { normalizeIp } from "@/lib/ip";
+import { getClientIp } from "@/lib/requestIp";
+import { checkRateLimit } from "@/lib/rateLimit";
 import { safeJsonFetch } from "@/lib/safeFetch";
 
 export const runtime = "nodejs";
@@ -22,12 +24,19 @@ function isPrefix(q: string): boolean {
 }
 
 export async function GET(req: NextRequest) {
+  const clientIp = getClientIp(req) ?? "unknown";
+  const rl = checkRateLimit({ key: `bgp:lookup:${clientIp}`, max: 45, windowMs: 60_000 });
+  const baseHeaders = { "cache-control": "no-store", ...rl.headers };
+  if (!rl.ok) {
+    return Response.json({ ok: false, error: "rate limited", trust: "trusted" }, { status: 429, headers: baseHeaders });
+  }
+
   const { searchParams } = new URL(req.url);
   const raw = (searchParams.get("q") ?? "").trim();
   if (!raw) {
     return Response.json(
       { ok: false, error: "missing query parameter q", trust: "trusted" },
-      { status: 400, headers: { "cache-control": "no-store" } },
+      { status: 400, headers: baseHeaders },
     );
   }
 
@@ -50,7 +59,7 @@ export async function GET(req: NextRequest) {
         hint: "Try an IP (8.8.8.8), prefix (8.8.8.0/24), or ASN (15169).",
         trust: "trusted",
       },
-      { status: 400, headers: { "cache-control": "no-store" } },
+      { status: 400, headers: baseHeaders },
     );
   }
 
@@ -85,7 +94,7 @@ export async function GET(req: NextRequest) {
     if (!ni.ok) {
       return Response.json(
         { ok: false, kind, query: raw, source: "ripe-stat", fetchedAt, error: ni.error, trust: "untrusted" },
-        { status: 502, headers: { "cache-control": "no-store" } },
+        { status: 502, headers: baseHeaders },
       );
     }
 
@@ -119,7 +128,7 @@ export async function GET(req: NextRequest) {
     if (!po.ok) {
       return Response.json(
         { ok: false, kind, query: raw, source: "ripe-stat", fetchedAt, error: po.error, trust: "untrusted" },
-        { status: 502, headers: { "cache-control": "no-store" } },
+        { status: 502, headers: baseHeaders },
       );
     }
 
@@ -154,7 +163,7 @@ export async function GET(req: NextRequest) {
     if (!ao.ok) {
       return Response.json(
         { ok: false, kind, query: raw, source: "ripe-stat", fetchedAt, error: ao.error, trust: "untrusted" },
-        { status: 502, headers: { "cache-control": "no-store" } },
+        { status: 502, headers: baseHeaders },
       );
     }
     summary = { kind: "asn", asn };
@@ -175,5 +184,5 @@ export async function GET(req: NextRequest) {
     },
     trust: "untrusted",
     notes: ["Data is best-effort external enrichment; treat as approximate.", "Provider: RIPEstat Data API."],
-  }, { headers: { "cache-control": "no-store" } });
+  }, { headers: baseHeaders });
 }

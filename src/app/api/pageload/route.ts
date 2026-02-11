@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { SafeFetchResult, safeJsonFetch } from "@/lib/safeFetch";
-import { normalizeIp } from "@/lib/ip";
+import { isPrivateOrSpecialIp, normalizeIp } from "@/lib/ip";
 import { getClientIp } from "@/lib/requestIp";
 import { checkRateLimit } from "@/lib/rateLimit";
 
@@ -34,23 +34,7 @@ function isPrivateOrLocalhost(hostname: string): boolean {
 
   const ip = normalizeIp(h);
   if (!ip) return false;
-  // IPv4 private/reserved ranges.
-  if (ip.includes(".")) {
-    const parts = ip.split(".").map((x) => Number(x));
-    const [a, b] = parts;
-    if (a === 10) return true;
-    if (a === 127) return true;
-    if (a === 169 && b === 254) return true;
-    if (a === 192 && b === 168) return true;
-    if (a === 172 && b != null && b >= 16 && b <= 31) return true;
-    return false;
-  }
-
-  // IPv6 loopback/link-local/ULA.
-  if (ip === "::1") return true;
-  if (ip.startsWith("fe80:") || ip.startsWith("fe80::")) return true;
-  if (ip.startsWith("fc") || ip.startsWith("fd")) return true; // fc00::/7 (coarse)
-  return false;
+  return isPrivateOrSpecialIp(ip);
 }
 
 function validateUrl(input: string): { ok: true; url: string } | { ok: false; error: string } {

@@ -1,8 +1,46 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { prettyJson } from "@/lib/json";
 
 type Phase = "idle" | "ping" | "download" | "upload" | "done" | "error";
+
+type SpeedSettings = {
+  pingSamples: number;
+  phaseDurationMs: number;
+  downloadConcurrency: number;
+  uploadConcurrency: number;
+  downloadMbPerRequest: number;
+  uploadMbPerPost: number;
+};
+
+const DEFAULT_SETTINGS: SpeedSettings = {
+  pingSamples: 10,
+  phaseDurationMs: 8000,
+  downloadConcurrency: 4,
+  uploadConcurrency: 3,
+  downloadMbPerRequest: 16,
+  uploadMbPerPost: 2,
+};
+
+function copyText(text: string) {
+  return navigator.clipboard.writeText(text);
+}
+
+function clamp(n: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, n));
+}
+
+function sanitizeSettings(s: SpeedSettings): SpeedSettings {
+  return {
+    pingSamples: clamp(Math.round(s.pingSamples || DEFAULT_SETTINGS.pingSamples), 4, 30),
+    phaseDurationMs: clamp(Math.round(s.phaseDurationMs || DEFAULT_SETTINGS.phaseDurationMs), 3000, 20000),
+    downloadConcurrency: clamp(Math.round(s.downloadConcurrency || DEFAULT_SETTINGS.downloadConcurrency), 1, 8),
+    uploadConcurrency: clamp(Math.round(s.uploadConcurrency || DEFAULT_SETTINGS.uploadConcurrency), 1, 6),
+    downloadMbPerRequest: clamp(Math.round(s.downloadMbPerRequest || DEFAULT_SETTINGS.downloadMbPerRequest), 1, 32),
+    uploadMbPerPost: clamp(Math.round(s.uploadMbPerPost || DEFAULT_SETTINGS.uploadMbPerPost), 1, 8),
+  };
+}
 
 function mbps(bytes: number, ms: number) {
   const bits = bytes * 8;
@@ -30,6 +68,10 @@ function jitterMedianAbsDelta(a: number[]) {
 export default function SpeedTestPage() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string>("");
+  const [settings, setSettings] = useState<SpeedSettings>(DEFAULT_SETTINGS);
+  const [settingsUsed, setSettingsUsed] = useState<SpeedSettings>(DEFAULT_SETTINGS);
+  const [completedAt, setCompletedAt] = useState<string>("");
+
   const [latencies, setLatencies] = useState<number[]>([]);
   const [idleLoss, setIdleLoss] = useState<number>(0);
   const [downloadMbps, setDownloadMbps] = useState<number | null>(null);
@@ -41,8 +83,9 @@ export default function SpeedTestPage() {
   const [uploadLoadedLatencies, setUploadLoadedLatencies] = useState<number[]>([]);
   const [uploadLoadedLoss, setUploadLoadedLoss] = useState<number>(0);
 
-  const jitter = useMemo(() => jitterMedianAbsDelta(latencies), [latencies]);
+  const running = phase !== "idle" && phase !== "done" && phase !== "error";
 
+  const jitter = useMemo(() => jitterMedianAbsDelta(latencies), [latencies]);
   const medianLatency = useMemo(() => median(latencies), [latencies]);
   const loadedDownloadMedian = useMemo(() => median(downloadLoadedLatencies), [downloadLoadedLatencies]);
   const loadedUploadMedian = useMemo(() => median(uploadLoadedLatencies), [uploadLoadedLatencies]);
@@ -60,8 +103,62 @@ export default function SpeedTestPage() {
     return (lost / total) * 100;
   }
 
+  const resultPayload = useMemo(
+    () => ({
+      completedAt,
+      phase,
+      settings: settingsUsed,
+      summary: {
+        idleLatencyMedianMs: medianLatency,
+        idleJitterMedianAbsDeltaMs: jitter,
+        idleLossPercent: lossPct(idleLoss, latencies.length),
+        downloadMbps,
+        uploadMbps,
+        loadedLatencyDownloadMedianMs: loadedDownloadMedian,
+        loadedLatencyUploadMedianMs: loadedUploadMedian,
+        bufferbloatMs,
+      },
+      series: {
+        downloadMbps: downloadSeries,
+        uploadMbps: uploadSeries,
+      },
+      loss: {
+        idle: { lost: idleLoss, ok: latencies.length },
+        downloadLoaded: { lost: downloadLoadedLoss, ok: downloadLoadedLatencies.length },
+        uploadLoaded: { lost: uploadLoadedLoss, ok: uploadLoadedLatencies.length },
+      },
+    }),
+    [
+      completedAt,
+      phase,
+      settingsUsed,
+      medianLatency,
+      jitter,
+      idleLoss,
+      latencies.length,
+      downloadMbps,
+      uploadMbps,
+      loadedDownloadMedian,
+      loadedUploadMedian,
+      bufferbloatMs,
+      downloadSeries,
+      uploadSeries,
+      downloadLoadedLoss,
+      downloadLoadedLatencies.length,
+      uploadLoadedLoss,
+      uploadLoadedLatencies.length,
+    ],
+  );
+
+  const hasResults = phase === "done" || phase === "error";
+
   const run = async () => {
+    const normalized = sanitizeSettings(settings);
+    setSettings(normalized);
+    setSettingsUsed(normalized);
+
     setError("");
+    setCompletedAt("");
     setLatencies([]);
     setIdleLoss(0);
     setDownloadMbps(null);
@@ -75,29 +172,43 @@ export default function SpeedTestPage() {
 
     try {
       setPhase("ping");
-      const p = await measurePing({ samples: 10, timeoutMs: 1200 });
+      const p = await measurePing({ samples: normalized.pingSamples, timeoutMs: 1200 });
       setLatencies(p.latenciesMs);
       setIdleLoss(p.lost);
 
       setPhase("download");
-      const d = await measureDownload({ durationMs: 8000, concurrency: 4, mbPerRequest: 16 });
+      const d = await measureDownload({
+        durationMs: normalized.phaseDurationMs,
+        concurrency: normalized.downloadConcurrency,
+        mbPerRequest: normalized.downloadMbPerRequest,
+      });
       setDownloadMbps(d.mbps);
       setDownloadSeries(d.seriesMbps);
       setDownloadLoadedLatencies(d.loadedLatenciesMs);
       setDownloadLoadedLoss(d.loadedLost);
 
       setPhase("upload");
-      const u = await measureUpload({ durationMs: 8000, concurrency: 3, mbPerPost: 2 });
+      const u = await measureUpload({
+        durationMs: normalized.phaseDurationMs,
+        concurrency: normalized.uploadConcurrency,
+        mbPerPost: normalized.uploadMbPerPost,
+      });
       setUploadMbps(u.mbps);
       setUploadSeries(u.seriesMbps);
       setUploadLoadedLatencies(u.loadedLatenciesMs);
       setUploadLoadedLoss(u.loadedLost);
 
       setPhase("done");
+      setCompletedAt(new Date().toISOString());
     } catch (e) {
       setPhase("error");
       setError(e instanceof Error ? e.message : String(e));
+      setCompletedAt(new Date().toISOString());
     }
+  };
+
+  const setNumber = (k: keyof SpeedSettings, n: number) => {
+    setSettings((prev) => ({ ...prev, [k]: Number.isFinite(n) ? n : (prev[k] as number) }));
   };
 
   return (
@@ -105,7 +216,7 @@ export default function SpeedTestPage() {
       <header className="grid gap-2">
         <h1 className="text-2xl font-semibold tracking-tight text-white">Speed Test</h1>
         <p className="max-w-3xl text-sm leading-6 text-white/65">
-          Browser-first throughput test using local endpoints. Results vary by device, browser, Wi‑Fi, VPN,
+          Browser-first throughput test using local endpoints. Results vary by device, browser, Wi-Fi, VPN,
           and server proximity. Treat this as a diagnostic, not a lab instrument.
         </p>
       </header>
@@ -118,14 +229,94 @@ export default function SpeedTestPage() {
               {phase === "idle" ? "READY" : phase.toUpperCase()}
             </span>
           </div>
-          <button
-            className="rounded-xl bg-emerald-400/20 px-4 py-3 text-sm font-semibold text-emerald-100 ring-1 ring-emerald-300/30 hover:bg-emerald-400/25 disabled:opacity-50"
-            onClick={() => void run()}
-            disabled={phase !== "idle" && phase !== "done" && phase !== "error"}
-          >
-            {phase === "idle" || phase === "done" || phase === "error" ? "Run speed test" : "Running…"}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              className="rounded-xl border border-white/15 bg-black/10 px-4 py-3 text-sm font-medium text-white/75 hover:bg-white/10 disabled:opacity-50"
+              onClick={() => void copyText(prettyJson(resultPayload))}
+              disabled={!hasResults}
+            >
+              Copy JSON
+            </button>
+            <button
+              className="rounded-xl bg-emerald-400/20 px-4 py-3 text-sm font-semibold text-emerald-100 ring-1 ring-emerald-300/30 hover:bg-emerald-400/25 disabled:opacity-50"
+              onClick={() => void run()}
+              disabled={running}
+            >
+              {running ? "Running..." : "Run speed test"}
+            </button>
+          </div>
         </div>
+
+        <details className="mt-4 rounded-xl border border-white/10 bg-black/20 p-4 ring-1 ring-white/10">
+          <summary className="cursor-pointer text-sm font-semibold text-white/85">Advanced settings</summary>
+          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+            <NumberField
+              label="Ping samples"
+              value={settings.pingSamples}
+              min={4}
+              max={30}
+              step={1}
+              disabled={running}
+              onChange={(n) => setNumber("pingSamples", n)}
+            />
+            <NumberField
+              label="Phase duration (ms)"
+              value={settings.phaseDurationMs}
+              min={3000}
+              max={20000}
+              step={500}
+              disabled={running}
+              onChange={(n) => setNumber("phaseDurationMs", n)}
+            />
+            <NumberField
+              label="Download concurrency"
+              value={settings.downloadConcurrency}
+              min={1}
+              max={8}
+              step={1}
+              disabled={running}
+              onChange={(n) => setNumber("downloadConcurrency", n)}
+            />
+            <NumberField
+              label="Upload concurrency"
+              value={settings.uploadConcurrency}
+              min={1}
+              max={6}
+              step={1}
+              disabled={running}
+              onChange={(n) => setNumber("uploadConcurrency", n)}
+            />
+            <NumberField
+              label="Download MB/request"
+              value={settings.downloadMbPerRequest}
+              min={1}
+              max={32}
+              step={1}
+              disabled={running}
+              onChange={(n) => setNumber("downloadMbPerRequest", n)}
+            />
+            <NumberField
+              label="Upload MB/post"
+              value={settings.uploadMbPerPost}
+              min={1}
+              max={8}
+              step={1}
+              disabled={running}
+              onChange={(n) => setNumber("uploadMbPerPost", n)}
+            />
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              className="rounded-full border border-white/15 bg-black/10 px-3 py-1 text-xs font-medium text-white/75 hover:bg-white/10 disabled:opacity-50"
+              onClick={() => setSettings(DEFAULT_SETTINGS)}
+              disabled={running}
+            >
+              Reset defaults
+            </button>
+            <span className="text-xs text-white/55">Inputs are clamped to safe ranges at run time.</span>
+          </div>
+        </details>
+
         {error ? (
           <div className="mt-3 rounded-xl border border-red-400/20 bg-red-500/10 p-3 text-sm text-red-200">
             {error}
@@ -203,6 +394,40 @@ function Sparkline({ series }: { series: number[] }) {
         />
       ))}
     </div>
+  );
+}
+
+function NumberField({
+  label,
+  value,
+  min,
+  max,
+  step,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  disabled: boolean;
+  onChange: (n: number) => void;
+}) {
+  return (
+    <label className="grid gap-1 text-xs text-white/65">
+      <span>{label}</span>
+      <input
+        className="rounded-lg border border-white/15 bg-black/20 px-3 py-2 text-sm text-white/85 outline-none placeholder:text-white/30 focus:border-sky-300/40"
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(Number(e.target.value))}
+      />
+    </label>
   );
 }
 

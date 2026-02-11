@@ -2,6 +2,8 @@ import { NextRequest } from "next/server";
 import dns from "node:dns/promises";
 import { ipVersion, normalizeIp } from "@/lib/ip";
 import { getPath } from "@/lib/json";
+import { getClientIp } from "@/lib/requestIp";
+import { checkRateLimit } from "@/lib/rateLimit";
 import { safeJsonFetch } from "@/lib/safeFetch";
 
 export const runtime = "nodejs";
@@ -28,6 +30,13 @@ async function reverseDns(ip: string): Promise<string[] | null> {
 }
 
 export async function GET(req: NextRequest) {
+  const clientIp = getClientIp(req) ?? "unknown";
+  const rl = checkRateLimit({ key: `whoami:${clientIp}`, max: 60, windowMs: 60_000 });
+  const baseHeaders = { "cache-control": "no-store", ...rl.headers };
+  if (!rl.ok) {
+    return Response.json({ ok: false, error: "rate limited", trust: "trusted" }, { status: 429, headers: baseHeaders });
+  }
+
   const { searchParams } = new URL(req.url);
   const privacyMode = parseBoolish(searchParams.get("privacy") ?? "");
 
@@ -41,7 +50,7 @@ export async function GET(req: NextRequest) {
     normalizeIp(xff) ??
     normalizeIp((req as unknown as { ip?: string }).ip ?? null);
 
-  const ip = candidate ?? "unknown";
+  const ip = candidate ?? clientIp;
 
   const serverObserved = {
     ip,
@@ -111,31 +120,34 @@ export async function GET(req: NextRequest) {
         }
       : null;
 
-  return Response.json({
-    serverObserved: { ...serverObserved, trust: "trusted" as const },
-    privacyMode: { enabled: privacyMode, trust: "trusted" as const },
-    reverseDns: {
-      ptr,
-      trust: "untrusted" as const,
-      notes: ["Reverse DNS is best-effort and depends on resolver behavior; treat as approximate."],
+  return Response.json(
+    {
+      serverObserved: { ...serverObserved, trust: "trusted" as const },
+      privacyMode: { enabled: privacyMode, trust: "trusted" as const },
+      reverseDns: {
+        ptr,
+        trust: "untrusted" as const,
+        notes: ["Reverse DNS is best-effort and depends on resolver behavior; treat as approximate."],
+      },
+      ripeStat: {
+        networkInfo: networkInfo.ok
+          ? { data: networkInfo.value, fetchedAt: networkInfo.fetchedAt, trust: "untrusted" as const }
+          : { error: networkInfo.error, fetchedAt: networkInfo.fetchedAt, trust: "untrusted" as const },
+        prefixOverview: prefixOverview.ok
+          ? { data: prefixOverview.value, fetchedAt: prefixOverview.fetchedAt, trust: "untrusted" as const }
+          : { error: prefixOverview.error, fetchedAt: prefixOverview.fetchedAt, trust: "untrusted" as const },
+        rpkiValidation: rpkiValidation.ok
+          ? { data: rpkiValidation.value, fetchedAt: rpkiValidation.fetchedAt, trust: "untrusted" as const }
+          : { error: rpkiValidation.error, fetchedAt: rpkiValidation.fetchedAt, trust: "untrusted" as const },
+      },
+      asnSummary: { asn: asnSummary, trust: "untrusted" as const },
+      notes: [
+        "Server-observed fields are trusted (what this server received).",
+        "Forwarded-IP headers are hints and can be spoofed outside a trusted proxy/CDN boundary.",
+        "Enrichment is best-effort external data; treat as approximate.",
+        "This endpoint avoids cookies/credentials on outbound fetches.",
+      ],
     },
-    ripeStat: {
-      networkInfo: networkInfo.ok
-        ? { data: networkInfo.value, fetchedAt: networkInfo.fetchedAt, trust: "untrusted" as const }
-        : { error: networkInfo.error, fetchedAt: networkInfo.fetchedAt, trust: "untrusted" as const },
-      prefixOverview: prefixOverview.ok
-        ? { data: prefixOverview.value, fetchedAt: prefixOverview.fetchedAt, trust: "untrusted" as const }
-        : { error: prefixOverview.error, fetchedAt: prefixOverview.fetchedAt, trust: "untrusted" as const },
-      rpkiValidation: rpkiValidation.ok
-        ? { data: rpkiValidation.value, fetchedAt: rpkiValidation.fetchedAt, trust: "untrusted" as const }
-        : { error: rpkiValidation.error, fetchedAt: rpkiValidation.fetchedAt, trust: "untrusted" as const },
-    },
-    asnSummary: { asn: asnSummary, trust: "untrusted" as const },
-    notes: [
-      "Server-observed fields are trusted (what this server received).",
-      "Forwarded-IP headers are hints and can be spoofed outside a trusted proxy/CDN boundary.",
-      "Enrichment is best-effort external data; treat as approximate.",
-      "This endpoint avoids cookies/credentials on outbound fetches.",
-    ],
-  }, { headers: { "cache-control": "no-store" } });
+    { headers: baseHeaders },
+  );
 }

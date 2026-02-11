@@ -19,6 +19,14 @@ async function fetchJson(url, opts) {
   return { res, json, text };
 }
 
+async function expectStatus(url, expected, opts) {
+  const { res, json, text } = await fetchJson(url, opts);
+  if (res.status !== expected) {
+    throw new Error(`expected ${expected} for ${url}, got ${res.status} body=${text.slice(0, 240)}`);
+  }
+  return { res, json, text };
+}
+
 async function main() {
   const base = mustGetEnv("BASE_URL", "http://localhost:3000").replace(/\/+$/, "");
   console.log(`BASE_URL=${base}`);
@@ -75,6 +83,50 @@ async function main() {
       throw new Error(`bgp lookup error missing error string (status=${res.status})`);
     }
     console.log(`bgp lookup: ${res.ok ? "ok" : `non-200(${res.status})`}`);
+  }
+
+  // 6) Negative paths: input validation.
+  {
+    await expectStatus(`${base}/api/pageload`, 400, { cache: "no-store" });
+    await expectStatus(`${base}/api/bgp/lookup`, 400, { cache: "no-store" });
+    await expectStatus(`${base}/api/bgp/lookup?q=not-a-query`, 400, { cache: "no-store" });
+    console.log("validation paths: ok");
+  }
+
+  // 7) Security headers on app route.
+  {
+    const res = await fetch(`${base}/`, { cache: "no-store" });
+    const xfo = res.headers.get("x-frame-options");
+    const nosniff = res.headers.get("x-content-type-options");
+    const referrer = res.headers.get("referrer-policy");
+    if (!xfo || !nosniff || !referrer) {
+      throw new Error("missing expected global security headers");
+    }
+    console.log("security headers: ok");
+  }
+
+  // 8) Rate limits: hit low-cost routes repeatedly and expect 429.
+  {
+    let whoami429 = false;
+    for (let i = 0; i < 70; i++) {
+      const { res } = await fetchJson(`${base}/api/whoami?privacy=1`, { cache: "no-store" });
+      if (res.status === 429) {
+        whoami429 = true;
+        break;
+      }
+    }
+    if (!whoami429) throw new Error("whoami rate-limit did not trigger");
+
+    let bgp429 = false;
+    for (let i = 0; i < 55; i++) {
+      const { res } = await fetchJson(`${base}/api/bgp/lookup?q=invalid`, { cache: "no-store" });
+      if (res.status === 429) {
+        bgp429 = true;
+        break;
+      }
+    }
+    if (!bgp429) throw new Error("bgp lookup rate-limit did not trigger");
+    console.log("rate-limit paths: ok");
   }
 
   if (process.env.RUN_PSI === "1") {

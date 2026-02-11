@@ -24,7 +24,7 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 - Page Load Lab: run a test against a public URL.
 - My IP: open `/my-ip` and verify the “server observed” block renders (toggle “Privacy mode” to avoid outbound enrichment).
 - BGP Explorer: search an ASN like `15169` or an IP like `8.8.8.8` (provider: RIPEstat).
-- Speed Test: run a short test; verify download/upload move.
+- Speed Test: run a short test; verify download/upload move. Use “Advanced settings” for tunable methodology and “Copy JSON” for result export.
 
 Or run the API smoke script while the dev server is running:
 
@@ -33,6 +33,8 @@ npm run dev
 # in another terminal:
 npm run smoke
 ```
+
+The smoke script also checks invalid-input paths, security headers, and local rate-limit behavior.
 
 ## Build
 
