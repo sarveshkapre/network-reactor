@@ -22,3 +22,14 @@
 - Evidence: Build error `the name ip is defined multiple times`; subsequent `npm run build` success.
 - Commit: `35013c3`
 - Confidence: high
+
+### 2026-02-12T20:01:47Z | Codex execution failure
+- Date: 2026-02-12T20:01:47Z
+- Trigger: Codex execution failure
+- Impact: Repo session did not complete cleanly
+- Root Cause: codex exec returned a non-zero status
+- Fix: Captured failure logs and kept repository in a recoverable state
+- Prevention Rule: Re-run with same pass context and inspect pass log before retrying
+- Evidence: pass_log=logs/20260212-101456-network-reactor-cycle-2.log
+- Commit: pending
+- Confidence: medium
